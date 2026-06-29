@@ -51,6 +51,7 @@
     background: #fffbe6; border: 1px solid #f3e6a8; border-radius: 8px;
     padding: 14px; font-size: 13.5px; color: #6b5d00;
   }
+  .count-note { font-size: 12px; color: #8a8f98; margin: -8px 0 14px; }
   .footer-note { font-size: 11.5px; color: #a0a4ab; text-align: center; margin-top: 18px; }
 </style>
 </head>
@@ -59,25 +60,49 @@
 
 <script>
   // --- Read client data from the URL the Airtable button passes in ---
+  // Two supported formats:
+  //   Single contact (Contacts-table button):  ?first=Doug&last=Salkin&phone=3106217134
+  //   Multiple contacts (Clients-table button): ?contacts=<enc(first)>~<enc(last)>~<phone>;<...>;<...>
   const p = new URLSearchParams(window.location.search);
-  const first = (p.get('first') || '').trim();
-  const last  = (p.get('last')  || '').trim();
-  const phone = (p.get('phone') || '').trim();
 
-  const fullName = [first, last].filter(Boolean).join(' ');
-  const phoneDigits = phone.replace(/[^0-9]/g, '');
+  const safeDecode = (v) => { try { return decodeURIComponent(v || ''); } catch (e) { return v || ''; } };
+
+  let contacts = [];
+  const multi = p.get('contacts');
+  if (multi) {
+    contacts = multi.split(';')
+      .map(s => s.trim())
+      .filter(Boolean)
+      .map(chunk => {
+        const parts = chunk.split('~');
+        return {
+          first: safeDecode((parts[0] || '')).trim(),
+          last:  safeDecode((parts[1] || '')).trim(),
+          phone: (parts[2] || '').trim()
+        };
+      })
+      .filter(c => c.first || c.last || c.phone);
+  } else {
+    const first = (p.get('first') || '').trim();
+    const last  = (p.get('last')  || '').trim();
+    const phone = (p.get('phone') || '').trim();
+    if (first || last || phone) contacts = [{ first, last, phone }];
+  }
 
   // Gmail MOBILE WEB search path — the only scheme confirmed to actually search on iOS
   const gbase = 'https://mail.google.com/mail/mu/mp/#tl/search/';
   const g = (term) => gbase + encodeURIComponent(term);
 
-  // --- Reminder message templates ---
-  const greetingName = first || last || 'there';
+  function cardHTML(c, i) {
+    const fullName = [c.first, c.last].filter(Boolean).join(' ');
+    const phoneDigits = (c.phone || '').replace(/[^0-9]/g, '');
+    const greetingName = c.first || c.last || 'there';
+    const phoneDisplay = c.phone || '—';
 
-  const smsText =
+    const smsText =
 `Hi ${greetingName}, it's Tim the piano tuner. Looking through my records, I see it's been a while since your piano was last tuned — they tend to drift over time. If you'd like to schedule a visit, just let me know and I'll find a time that suits you.`;
 
-  const emailText =
+    const emailText =
 `Hello ${greetingName},
 
 I hope you're well. Looking through my records, I see it's been a while since your piano was last tuned — they tend to drift over time, so it may be ready for some attention. If you'd like to schedule a visit, just let me know and I'll find a time that suits you.
@@ -85,24 +110,9 @@ I hope you're well. Looking through my records, I see it's been a while since yo
 Best,
 Tim Michaels`;
 
-  const app = document.getElementById('app');
-
-  if (!first && !last && !phone) {
-    app.innerHTML = `
-      <h1>Client Lookup</h1>
-      <div class="sub">TM Pianos</div>
-      <div class="empty">
-        No client loaded. This page is meant to be opened from the <strong>Email / Lookup button</strong>
-        on a contact in Airtable, which passes that client's name and phone in automatically.
-      </div>`;
-  } else {
-    const phoneDisplay = phone || '—';
     const smsHref = phoneDigits ? `sms:${phoneDigits}&body=${encodeURIComponent(smsText)}` : '#';
 
-    app.innerHTML = `
-      <h1>Client Lookup</h1>
-      <div class="sub">TM Pianos</div>
-
+    return `
       <div class="card">
         <div class="label">Contact</div>
         <div class="name">${fullName || '(no name)'}</div>
@@ -112,8 +122,8 @@ Tim Michaels`;
         <div class="hint">Try one; if it misses or returns too many, try the next angle.</div>
 
         <a class="btn search-name" href="${g(fullName)}">Search “${fullName}”</a>
-        <a class="btn search-last" href="${g(last)}">Search last name only — “${last}”</a>
-        <a class="btn search-from" href="${g('from:' + last)}">Mail FROM them — from:${last}</a>
+        <a class="btn search-last" href="${g(c.last)}">Search last name only — “${c.last}”</a>
+        <a class="btn search-from" href="${g('from:' + c.last)}">Mail FROM them — from:${c.last}</a>
         <a class="btn search-phone ${phoneDigits ? '' : 'disabled'}" href="${phoneDigits ? g(phoneDigits) : '#'}">
           ${phoneDigits ? 'Search by phone — ' + phoneDigits : 'No phone on file'}
         </a>
@@ -121,9 +131,9 @@ Tim Michaels`;
         <div class="section-title">💬 Text reminder</div>
         <div class="hint">Edit if needed, then send straight to their phone or copy it.</div>
         <div class="reminder-box">
-          <textarea id="smsBox">${smsText}</textarea>
+          <textarea id="smsBox${i}">${smsText}</textarea>
           <div class="row" style="margin-top:8px;">
-            <button class="btn copy" onclick="copyField('smsBox', this)">Copy text</button>
+            <button class="btn copy" onclick="copyField('smsBox${i}', this)">Copy text</button>
             <a class="btn sms-send" href="${smsHref}" style="text-decoration:none;display:flex;align-items:center;justify-content:center;${phoneDigits ? '' : 'opacity:.4;pointer-events:none;'}">Open in Messages</a>
           </div>
         </div>
@@ -131,11 +141,31 @@ Tim Michaels`;
         <div class="section-title">✉️ Email reminder</div>
         <div class="hint">Copy this into a new email to the client.</div>
         <div class="reminder-box">
-          <textarea id="emailBox" style="min-height:170px;">${emailText}</textarea>
-          <button class="btn copy" style="margin-top:8px;" onclick="copyField('emailBox', this)">Copy email</button>
+          <textarea id="emailBox${i}" style="min-height:170px;">${emailText}</textarea>
+          <button class="btn copy" style="margin-top:8px;" onclick="copyField('emailBox${i}', this)">Copy email</button>
         </div>
-      </div>
+      </div>`;
+  }
 
+  const app = document.getElementById('app');
+
+  if (contacts.length === 0) {
+    app.innerHTML = `
+      <h1>Client Lookup</h1>
+      <div class="sub">TM Pianos</div>
+      <div class="empty">
+        No client loaded. This page is meant to be opened from the <strong>Email / Lookup button</strong>
+        on a contact (or client) in Airtable, which passes the name and phone in automatically.
+      </div>`;
+  } else {
+    const countNote = contacts.length > 1
+      ? `<div class="count-note">${contacts.length} contacts linked to this client — each shown below.</div>`
+      : '';
+    app.innerHTML = `
+      <h1>Client Lookup</h1>
+      <div class="sub">TM Pianos</div>
+      ${countNote}
+      ${contacts.map((c, i) => cardHTML(c, i)).join('')}
       <div class="footer-note">Searches open Gmail mobile web · Text opens Messages · TM Pianos</div>`;
   }
 
@@ -150,7 +180,7 @@ Tim Michaels`;
       setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 1600);
     };
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(el.value).then(done).catch(() => { document.execCommand('copy'); done(); });
+      navigator.clipboard.writeText(el.value).then(done, () => { document.execCommand('copy'); done(); });
     } else {
       document.execCommand('copy'); done();
     }
