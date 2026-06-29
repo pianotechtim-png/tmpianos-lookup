@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Client Lookup — TM Pianos</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: rgba(0,0,0,0.08); }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    margin: 0; padding: 16px; background: #f4f5f7; color: #1d1f25; line-height: 1.45;
+  }
+  .wrap { max-width: 560px; margin: 0 auto; }
+  h1 { font-size: 19px; margin: 4px 0 2px; }
+  .sub { font-size: 13px; color: #6b6f76; margin-bottom: 18px; }
+  .card {
+    background: #fff; border: 1px solid #e2e4e9; border-radius: 10px;
+    padding: 14px 14px 16px; margin-bottom: 14px;
+  }
+  .label { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #8a8f98; margin-bottom: 6px; }
+  .name { font-size: 18px; font-weight: 600; margin-bottom: 2px; }
+  .meta { font-size: 13px; color: #6b6f76; margin-bottom: 14px; }
+  .section-title { font-size: 13px; font-weight: 700; margin: 18px 0 8px; color: #3a3f47; }
+  .hint { font-size: 12px; color: #8a8f98; margin: -4px 0 10px; }
+  a.btn, button.btn {
+    display: block; width: 100%; text-decoration: none; text-align: center;
+    padding: 13px 12px; border-radius: 8px; font-size: 15px; font-weight: 600;
+    margin-bottom: 8px; border: 1px solid transparent; cursor: pointer;
+    font-family: inherit;
+  }
+  a.search-name { background: #1a73e8; color: #fff; }
+  a.search-last { background: #1557b0; color: #fff; }
+  a.search-from { background: #fff; color: #1557b0; border-color: #1557b0; }
+  a.search-phone { background: #fff; color: #137333; border-color: #137333; }
+  a.search-phone.disabled { opacity: .4; pointer-events: none; }
+  .reminder-box {
+    background: #f7f8fa; border: 1px solid #e2e4e9; border-radius: 8px;
+    padding: 12px; margin-bottom: 10px;
+  }
+  textarea {
+    width: 100%; border: 1px solid #d4d7dd; border-radius: 6px; padding: 10px;
+    font-size: 14px; font-family: inherit; line-height: 1.5; resize: vertical;
+    min-height: 132px; color: #1d1f25; background: #fff;
+  }
+  .row { display: flex; gap: 8px; }
+  .row button.btn { margin-bottom: 0; }
+  button.copy { background: #1d1f25; color: #fff; }
+  button.sms-send { background: #34c759; color: #fff; }
+  .copied { background: #137333 !important; }
+  .empty {
+    background: #fffbe6; border: 1px solid #f3e6a8; border-radius: 8px;
+    padding: 14px; font-size: 13.5px; color: #6b5d00;
+  }
+  .footer-note { font-size: 11.5px; color: #a0a4ab; text-align: center; margin-top: 18px; }
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+
+<script>
+  // --- Read client data from the URL the Airtable button passes in ---
+  const p = new URLSearchParams(window.location.search);
+  const first = (p.get('first') || '').trim();
+  const last  = (p.get('last')  || '').trim();
+  const phone = (p.get('phone') || '').trim();
+
+  const fullName = [first, last].filter(Boolean).join(' ');
+  const phoneDigits = phone.replace(/[^0-9]/g, '');
+
+  // Gmail MOBILE WEB search path — the only scheme confirmed to actually search on iOS
+  const gbase = 'https://mail.google.com/mail/mu/mp/#tl/search/';
+  const g = (term) => gbase + encodeURIComponent(term);
+
+  // --- Reminder message templates ---
+  const greetingName = first || last || 'there';
+
+  const smsText =
+`Hi ${greetingName}, it's Tim the piano tuner. Looking through my records, I see it's been a while since your piano was last tuned — they tend to drift over time. If you'd like to schedule a visit, just let me know and I'll find a time that suits you.`;
+
+  const emailText =
+`Hello ${greetingName},
+
+I hope you're well. Looking through my records, I see it's been a while since your piano was last tuned — they tend to drift over time, so it may be ready for some attention. If you'd like to schedule a visit, just let me know and I'll find a time that suits you.
+
+Best,
+Tim Michaels`;
+
+  const app = document.getElementById('app');
+
+  if (!first && !last && !phone) {
+    app.innerHTML = `
+      <h1>Client Lookup</h1>
+      <div class="sub">TM Pianos</div>
+      <div class="empty">
+        No client loaded. This page is meant to be opened from the <strong>Email / Lookup button</strong>
+        on a contact in Airtable, which passes that client's name and phone in automatically.
+      </div>`;
+  } else {
+    const phoneDisplay = phone || '—';
+    const smsHref = phoneDigits ? `sms:${phoneDigits}&body=${encodeURIComponent(smsText)}` : '#';
+
+    app.innerHTML = `
+      <h1>Client Lookup</h1>
+      <div class="sub">TM Pianos</div>
+
+      <div class="card">
+        <div class="label">Contact</div>
+        <div class="name">${fullName || '(no name)'}</div>
+        <div class="meta">📞 ${phoneDisplay}</div>
+
+        <div class="section-title">🔍 Find email history in Gmail</div>
+        <div class="hint">Try one; if it misses or returns too many, try the next angle.</div>
+
+        <a class="btn search-name" href="${g(fullName)}">Search “${fullName}”</a>
+        <a class="btn search-last" href="${g(last)}">Search last name only — “${last}”</a>
+        <a class="btn search-from" href="${g('from:' + last)}">Mail FROM them — from:${last}</a>
+        <a class="btn search-phone ${phoneDigits ? '' : 'disabled'}" href="${phoneDigits ? g(phoneDigits) : '#'}">
+          ${phoneDigits ? 'Search by phone — ' + phoneDigits : 'No phone on file'}
+        </a>
+
+        <div class="section-title">💬 Text reminder</div>
+        <div class="hint">Edit if needed, then send straight to their phone or copy it.</div>
+        <div class="reminder-box">
+          <textarea id="smsBox">${smsText}</textarea>
+          <div class="row" style="margin-top:8px;">
+            <button class="btn copy" onclick="copyField('smsBox', this)">Copy text</button>
+            <a class="btn sms-send" href="${smsHref}" style="text-decoration:none;display:flex;align-items:center;justify-content:center;${phoneDigits ? '' : 'opacity:.4;pointer-events:none;'}">Open in Messages</a>
+          </div>
+        </div>
+
+        <div class="section-title">✉️ Email reminder</div>
+        <div class="hint">Copy this into a new email to the client.</div>
+        <div class="reminder-box">
+          <textarea id="emailBox" style="min-height:170px;">${emailText}</textarea>
+          <button class="btn copy" style="margin-top:8px;" onclick="copyField('emailBox', this)">Copy email</button>
+        </div>
+      </div>
+
+      <div class="footer-note">Searches open Gmail mobile web · Text opens Messages · TM Pianos</div>`;
+  }
+
+  function copyField(id, btn) {
+    const el = document.getElementById(id);
+    el.select();
+    el.setSelectionRange(0, 99999);
+    const done = () => {
+      const orig = btn.textContent;
+      btn.textContent = '✓ Copied';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 1600);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(el.value).then(done).catch(() => { document.execCommand('copy'); done(); });
+    } else {
+      document.execCommand('copy'); done();
+    }
+  }
+</script>
+</body>
+</html>
